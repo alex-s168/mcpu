@@ -1,3 +1,6 @@
+#ifndef CPU_H
+#define CPU_H
+
 #include "emu.h"
 
 typedef enum {
@@ -24,9 +27,11 @@ typedef enum {
     REG_R5   = 0b00010101,
     REG_R6   = 0b00010110,
     REG_R7   = 0b00010111,
+
+    REG_LEN  = 0b00011000,
 } CPU_Reg;
 
-extern const char* cpu_reg_names[];
+extern const char* cpu_reg_names[REG_LEN];
 
 typedef enum : u8 {
     E_NONE   = 0,
@@ -157,9 +162,11 @@ typedef enum {
     INSTR_int    = 0b01100101, // [id:   8b  imm]
     INSTR_rti    = 0b01100110,
     INSTR_jmf    = 0b01100111, // [addr: addr],   [bank:  8b  imm]
+
+    INSTR_LEN    = 0b01101000,
 } CPU_Instr_Kind;
 
-extern const char* cpu_instr_names[];
+extern const char* cpu_instr_names[INSTR_LEN];
 
 typedef struct {
     void* userdata;
@@ -168,8 +175,8 @@ typedef struct {
 } CPU;
 
 // implemented in emu.c
-u8 read(CPU* cpu, u16 addr, su4 bank);
-void write(CPU* cpu, u16 addr, su4 bank, u8 val);
+u8 mread(CPU* cpu, u16 addr, su4 bank);
+void mwrite(CPU* cpu, u16 addr, su4 bank, u8 val);
 
 u8 readsafe(bool* modified, CPU* cpu, u16 addr, su4 bank);
 void writesafe(bool* modified, CPU* cpu, u16 addr, su4 bank, u8 val);
@@ -179,3 +186,5 @@ void cpu_trig_av(CPU *cpu, u16 addr, su4 bank);
 CPU_Page_Entry cpu_page(CPU *cpu, u8 id);
 CPU_Page_Entry cpu_page_at(CPU *cpu, u16 addr, su4 bank);
 void cpu_step(CPU *cpu);
+
+#endif

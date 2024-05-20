@@ -1,6 +1,6 @@
 #include "cpu.h"
 
-const char* cpu_reg_names[] = {
+const char* cpu_reg_names[REG_LEN] = {
     [REG_PC]   = "pcp",
     [REG_SP]   = "sp",
     [REG_BP]   = "bp",
@@ -25,16 +25,16 @@ const char* cpu_reg_names[] = {
     [REG_R7]   = "r7",
 };
 
-const char* cpu_instr_names[] = {
+const char* cpu_instr_names[INSTR_LEN] = {
     [INSTR_nop]    = "nop",
     [INSTR_mov]    = "mov",
     [INSTR_imm_b]  = "imm.b",
     [INSTR_imm_w]  = "imm.w",
     [INSTR_lod_b]  = "lod.b",
-    [INSTR_lod_w]  = "jmf",
+    [INSTR_lod_w]  = "lod.w",
     [INSTR_sto_b]  = "sto.b",
     [INSTR_sto_w]  = "sto.w",
-    [INSTR_addi_b] = "jmf",
+    [INSTR_addi_b] = "addi.b",
     [INSTR_addi_w] = "addi.w",
     [INSTR_add]    = "add",
     [INSTR_subi_b] = "subi.b",
@@ -60,7 +60,7 @@ const char* cpu_instr_names[] = {
     [INSTR_btsi_b] = "btsi.b",
     [INSTR_bts]    = "bts",
     [INSTR_btti_b] = "btti.b",
-    [INSTR_btt]    = "jmf",
+    [INSTR_btt]    = "btt",
     [INSTR_tst]    = "tst",
     [INSTR_tstm_b] = "tstm.b",
     [INSTR_tstm_w] = "tstm.w",
@@ -98,9 +98,9 @@ void cpu_inter(CPU *cpu, CPU_Intr_Kind kind) {
     su4 entry_bank = cpu->regs[REG_INTb];
 
     CPU_Intr_Entry entry;
-    entry.raw.lo = read(cpu, entry_addr, entry_bank);
-    entry.raw.mid = read(cpu, entry_addr + 1, entry_bank);
-    entry.raw.hi = read(cpu, entry_addr + 2, entry_bank);
+    entry.raw.lo = mread(cpu, entry_addr, entry_bank);
+    entry.raw.mid = mread(cpu, entry_addr + 1, entry_bank);
+    entry.raw.hi = mread(cpu, entry_addr + 2, entry_bank);
 
     if (entry.cl_mmu)
         cpu->regs[REG_MMUe] = false;
@@ -137,7 +137,7 @@ CPU_Page_Entry cpu_page(CPU *cpu, u8 id) {
     u16 entry_addr = cpu->regs[REG_MMUp] + id;
     su4 entry_bank = cpu->regs[REG_MMUb];
 
-    u8 byte = read(cpu, entry_addr, entry_bank);
+    u8 byte = mread(cpu, entry_addr, entry_bank);
     CPU_Page_Entry entry;
     entry.byte = byte;
     return entry;
@@ -161,7 +161,7 @@ u8 readsafe(bool* modified, CPU* cpu, u16 addr, su4 bank) {
     }
 
     *modified = false;
-    return read(cpu, addr, bank);
+    return mread(cpu, addr, bank);
 }
 
 void writesafe(bool* modified, CPU* cpu, u16 addr, su4 bank, u8 val) {
@@ -175,7 +175,7 @@ void writesafe(bool* modified, CPU* cpu, u16 addr, su4 bank, u8 val) {
     }
 
     *modified = false;
-    return write(cpu, addr, bank, val);
+    return mwrite(cpu, addr, bank, val);
 }
 
 static u8 cpu_instr_byte(bool *fail, CPU* cpu) {
@@ -192,7 +192,7 @@ static u8 cpu_instr_byte(bool *fail, CPU* cpu) {
     }
 
     *fail = false;
-    return read(cpu, addr, bank);
+    return mread(cpu, addr, bank);
 }
 
 static u16 cpu_instr_word(bool *fail, CPU *cpu) {
@@ -317,6 +317,7 @@ static bool cpu_reg_locked(CPU* cpu, CPU_Reg reg) {
     return false;
 
 locked:
+    puts("reg locked");
     // TOOD: fault
     return true;
 }
@@ -458,9 +459,7 @@ void cpu_step(CPU* cpu) {
             if (cpu_reg_locked(cpu, opr) || fail || pf)
                 return;
 
-            u16 opr_val = cpu->regs[opr];
-            opr_val += val;
-            cpu->regs[opr] = opr_val;
+            cpu->regs[opr] += val;
         } break;
 
     case INSTR_addi_w: // [opr:  reg],    [val:   16b imm]
@@ -840,7 +839,12 @@ void cpu_step(CPU* cpu) {
 
     case INSTR_jmp: // [addr: addr]
         {
+            bigaddr addr = cpu_instr_addr(&fail, cpu);
+            if (fail)
+                return;
 
+            cpu->regs[REG_PC] = addr.addr;
+            cpu->regs[REG_PCb] = addr.bank;
         } break;
 
     case INSTR_jmz: // [addr: addr]

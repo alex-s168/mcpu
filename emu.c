@@ -3,21 +3,8 @@
 #include <string.h>
 #include "cpu.h"
 #include "asm.h"
-
-static u8* mem;
-
-u8 read(CPU* cpu, u16 addr, su4 bank) {
-    if (bank == 0 && addr < 4096 * 2) {
-        return mem[addr];
-    }
-    return 0;
-}
-
-void write(CPU* cpu, u16 addr, su4 bank, u8 val) {
-    if (bank == 0 && addr < 4096 * 2) {
-        mem[addr] = val;
-    }
-}
+#include "timer.h"
+#include "audio.h"
 
 #define SPLITERATE(str,split,p) for (char *p = strtok(str, split); p != NULL; p = strtok(NULL, split))
 
@@ -32,39 +19,35 @@ void print_byte(u8 byte) {
     printf("%s%s", bit_rep[byte >> 4], bit_rep[byte & 0x0F]);
 }
 
+CPU_Reg watched[] = {
+    REG_PC,
+    REG_R0,
+    REG_R1,
+};
+
 void print_cpu(const CPU * cpu, int (*out)(const char *)) {
-    for (size_t i = 0; i < 256; i ++) {
-        const char *name = cpu_reg_names[i];
+    for (size_t i = 0; i < sizeof(watched) / sizeof(*watched); i ++) {
+        const char *name = cpu_reg_names[watched[i]];
         if (name == NULL)
             continue;
         static char buf[256];
-        u32 val = cpu->regs[i];
+        u32 val = cpu->regs[watched[i]];
         sprintf(buf, "%s = %u = page %u + %u", name, val, val / 4096, val % 4096);
         (void) out(buf);
     }
 }
 
-static char src[] =
-     "imm.b mmub, b 0"
-"\n" "imm.w mmup, w 512"
+static int assemble_file_into(const char *file, u8 *ptr) {
+    FILE* src = fopen(file, "r");
 
-"\n" "imm.b r0, b 1"
-"\n" "sto.b [pt + 1], r0"
-
-"\n" "imm.b mmue, b 1"
-"\n" "imm.b r0, b 55"
-"\n";
-
-int main() {
-    mem = malloc(sizeof(u8) * 4096 * 2);
-    if (mem == NULL)
-        return 1;
-
-    u8* ptr = mem + PAGE(1);
+    char* line = NULL;
+    size_t len = 0;
+    ssize_t read;
 
     size_t line_id = 0;
     int status = 0;
-    SPLITERATE(src, "\n", line) {
+
+    while ((read = getline(&line, &len, src)) != -1) {
         printf("%s   ", line);
         u8* old = ptr;
         int s = assemble(line, &ptr);
@@ -82,18 +65,73 @@ int main() {
         }
         line_id ++;
     }
+
+    fclose(src);
+
+    return status;
+}
+
+static u8* mem;
+static SoundChip sc;
+static TimerChip tc;
+
+u8 mread(CPU* cpu, u16 addr, su4 bank) {
+    if (bank == 0) { 
+        if (addr < PAGE(2)) {
+            return mem[addr];
+        }
+        else if (addr < PAGE(3)) {
+            return 0;
+        }
+        else if (addr < PAGE(4)) {
+            return 0;
+        }
+    }
+    return 0;
+}
+
+void mwrite(CPU* cpu, u16 addr, su4 bank, u8 val) {
+    if (bank == 0) { 
+        if (addr < PAGE(2)) {
+            mem[addr] = val;
+        }
+        else if (addr < PAGE(3)) {
+            soundchip_write(&sc, addr - PAGE(2), val);
+        }
+        else if (addr < PAGE(4)) {
+            timerchip_write(&tc, addr - PAGE(3), val);
+        }
+    }
+}
+
+int main() {
+    mem = malloc(sizeof(u8) * PAGE(2));
+    if (mem == NULL)
+        return 1;
+
+    {
+        u8* ptr = mem + PAGE(1);
+        int status = assemble_file_into("test.asm", ptr);
+        if (status != 0)
+            return status;
+    }
     
     static CPU cpu;
     cpu_reset(&cpu);
 
-    for (size_t i = 0; i < 6; i ++) {
+    timerchip_init(&tc, &cpu);
+    soundchip_init(&sc);
+    soundchip_start(&sc);
+
+    while(true) {
+        timerchip_tick(&tc);
         cpu_step(&cpu);
 
         print_cpu(&cpu, puts);
         puts("");
     }
 
-    printf("mem[page 0 + 512 + 1] = %u\n", mem[512 + 1]);
+    soundchip_stop(&sc);
 
     return 0;
 }

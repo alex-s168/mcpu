@@ -4,7 +4,7 @@
 #include "asm.h"
 
 static CPU_Reg get_reg(char** src, bool* found) {
-    for (size_t i = 0; i < 256; i ++) {
+    for (size_t i = 0; i < REG_LEN; i ++) {
         if (cpu_reg_names[i] == NULL)
             continue;
         size_t len = strlen(cpu_reg_names[i]);
@@ -37,6 +37,20 @@ static CPU_Instr_Source_Type get_source(char** src, u8** dest) {
 
 int assemble(char* src, u8** dest) {
     src += strspn(src, " ");
+    char* semi = strchr(src, ';');
+    if (semi != NULL)
+        *semi = '\0';
+
+    semi = strchr(src, '\n');
+    if (semi != NULL)
+        *semi = '\0';
+
+    semi = strchr(src, '\r');
+    if (semi != NULL)
+        *semi = '\0';
+
+    if (*src == '\0')
+        return 0;
 
     char* args = strchrnul(src, ' ');
     if (*args != '\0') {
@@ -46,7 +60,7 @@ int assemble(char* src, u8** dest) {
 
     CPU_Instr_Kind instr;
     bool found = false;
-    for (size_t i = 0; i < 256; i ++) {
+    for (size_t i = 0; i < INSTR_LEN; i ++) {
         if (cpu_instr_names[i] == NULL)
             continue;
         if (strcmp(cpu_instr_names[i], src) == 0) {
@@ -207,7 +221,7 @@ int assemble(char* src, u8** dest) {
                 *pheader = header.byte;
             }
             else {
-                u8* pheader = *dest;
+                u8* pheader = (*dest)++;
                     
                 CPU_Instr_Addr_Header header;
                 header.mode = ADDRMD_ABSOLUTE;
